@@ -5,6 +5,9 @@
 #include <LovyanGFX.hpp>
 #include <LGFX_AUTODETECT.hpp>
 
+#include <driver/i2s.h>
+#include <WiFi.h>
+
 /**RFID**/
 MFRC522_I2C mfrc522(0x28, -1); // Create MFRC522 instance.
 
@@ -27,7 +30,7 @@ int littleFingerLine[5] = {18, 19, 20};
 bool isCard = false; // カード読み取りフラグ
 #define ace "155 43 9 12"
 int CardID = 0;
-float TotalTime = 5; // 演出合計時間
+float TotalTime = 5000; // 演出合計時間(ms)
 unsigned long startMillis = 0;
 unsigned long currentMillis = 0;
 unsigned long previousLEDTime = 0;
@@ -49,7 +52,7 @@ void wait_display();
 #define jack "1d 75 01 55"
 #define queen "1d fd 6e 58"
 #define king "1d e1 27 55"
-void rotate_display(float diff);
+void rotate_display(float diff, int cardId);
 
 // 加速度リセット
 float baseAccX, baseAccY, baseAccZ = 0; // 基準加速度格納用
@@ -59,7 +62,7 @@ float maxAccX, maxAccY, maxAccZ = 0;
 bool reset_flg = false;
 void check_acc();
 void zeroSet();
-void shakeReset();
+boolean shakeReset();
 
 void Fingertip2Wrist(int ledPosition, int ledBrightness);
 bool isNewCard();
@@ -67,6 +70,7 @@ int identifyCard();
 void LEDcontrol(int B, unsigned long C, unsigned long D);
 void LCDcontrol(int B, unsigned long C, unsigned long D);
 void uid_display_proc();
+void acc_setup();
 
 // ---------------------------------------------------------------
 void setup()
@@ -74,12 +78,14 @@ void setup()
   pixels.begin(); // NeoPixelの初期化
   pixels.clear(); // NeoPixelのリセット
 
-  Serial.begin(19200); // シリアル通信の開始
+  Serial.begin(115200); // シリアル通信の開始
 
   M5.begin();
   Wire.begin();
 
   wait_display_setup(); // 待機画面SCANのsetup
+
+  acc_setup(); // shake_resetのためのsetup
 }
 
 // ---------------------------------------------------------------
@@ -103,16 +109,14 @@ void loop()
   else
   {
     LEDcontrol(CardID, startMillis, currentMillis);
-    LCDcontrol(2, startMillis, currentMillis);
-    if ((currentMillis - startMillis) > 5000)
+    LCDcontrol(CardID, startMillis, currentMillis);
+    Serial.printf("startMillis = %d, currentMillis = %d, diff = %d \n", startMillis, currentMillis, (currentMillis - startMillis));
+    
+    if ((currentMillis - startMillis) > TotalTime)
     {
-      // zeroSet();
-      // while (!reset_flg)
-      // {
-      //   shakeReset();
-      // }
-      isCard = false; // isCardをbooleanで更新
-      reset_flg = false;
+      zeroSet();
+      while (!shakeReset())
+        isCard = false; // isCardをbooleanで更新
     }
   }
 }
@@ -144,10 +148,10 @@ int identifyCard()
     }
   }
   String strUID = strBuf[0] + " " + strBuf[1] + " " + strBuf[2] + " " + strBuf[3];
+
+  // カードを増やしたい場合はdefine増やしてからここに追加
   if (strUID.equalsIgnoreCase(ace))
   {
-    // spriteImage.drawJpgFile(SD, "/trump/card_spade_01.jpg", 0, 0);
-    //  spriteImage.pushSprite(&lcd, x, y);
     return 1;
   }
 }
@@ -193,7 +197,10 @@ void LCDcontrol(int ID, unsigned long StartTime, unsigned long CurrentTime)
     // ledBrightness =100;
     // ledPosition =0;
   }
-  switch (ID)
+
+  int action = 2; // 演出を指定
+
+  switch (action)
   {
   case 1:
     if ((CurrentTime - previousLCDTime) > 100)
@@ -201,17 +208,6 @@ void LCDcontrol(int ID, unsigned long StartTime, unsigned long CurrentTime)
       previousLCDTime = CurrentTime;
     }
     // M5.Lcd.println(previousLEDTime);
-
-    /*
-      ledBrightness +=10;
-      ledPosition +=1;
-    if(ledPosition >= 5){
-      ledPosition = 0;
-    }
-    if(ledBrightness >= 250){
-      ledBrightness = 250;
-    }
-    */
     break;
 
   case 2:
@@ -219,7 +215,7 @@ void LCDcontrol(int ID, unsigned long StartTime, unsigned long CurrentTime)
     { // 100ms間隔で更新
       float diff = currentMillis - startMillis;
       previousLCDTime = CurrentTime;
-      rotate_display(diff);
+      rotate_display(diff, ID);
     }
   default:
     break;
@@ -316,67 +312,41 @@ void wait_display()
 // 回転演出
 int i = 0;
 int mode = 1;
-void rotate_display(float diff)
+void rotate_display(float diff, int cardId)
 {
-  // String strBuf[mfrc522.uid.size];
-  // for (byte i = 0; i < mfrc522.uid.size; i++)
-  // {
-  //   strBuf[i] = String(mfrc522.uid.uidByte[i], HEX);
-  //   if (strBuf[i].length() == 1)
-  //   {
-  //     strBuf[i] = "0" + strBuf[i];
-  //   }
-  // }
+  switch (cardId)
+  {
+  case 1:
+    spriteImage.drawJpgFile(SD, "/trump/card_spade_01.jpg", 0, 0);
+    break;
+  }
 
-  // String strUID = strBuf[0] + " " + strBuf[1] + " " + strBuf[2] + " " + strBuf[3];
+  float round_diff = round(diff / 100) * 100; // きっちり5000で回転が終わるように調整
 
-  // if (strUID.equalsIgnoreCase(ace))
-  // {
-  //   spriteImage.drawJpgFile(SD, "/trump/card_spade_01.jpg", 0, 0);
-  // }
-  // else if (strUID.equalsIgnoreCase(jack))
-  // {
-  //   spriteImage.drawJpgFile(SD, "/trump/card_spade_11.jpg", 0, 0);
-  // }
-  // else if (strUID.equalsIgnoreCase(queen))
-  // {
-  //   spriteImage.drawJpgFile(SD, "/trump/card_spade_12.jpg", 0, 0);
-  // }
-  // else if (strUID.equalsIgnoreCase(king))
-  // {
-  //   spriteImage.drawJpgFile(SD, "/trump/card_spade_13.jpg", 0, 0);
-  // }
-  // else
-  // {
-  //   Serial.println(strUID);
-  // }
-
-  // if (mode == 1)
-  // {
-  //   spriteImage.drawJpgFile(SD, "/trump/card_spade_01.jpg", 0, 0);
-  // }
-
-  // for (float i = 0; i <= 360; i += 10)
-  // {
-  //   spriteBase.fillScreen(BLACK); // 画面の塗りつぶし
-  //   spriteImage.pushRotateZoom(160, 120, i, i / 360, i / 360);
-  //   spriteBase.pushSprite(0, 0);
-  //   delay(100);
-  // }
-  spriteImage.drawJpgFile(SD, "/trump/card_spade_01.jpg", 0, 0);
   spriteBase.fillScreen(BLACK); // 画面の塗りつぶし
-  spriteImage.pushRotateZoom(160, 120, diff * 360 / 5000, diff * 1 / 5000, diff * 1 / 5000);
-  // spriteImage.pushRotateZoom(160, 120, 0, 1, 1);
+  spriteImage.pushRotateZoom(160, 120, round_diff * 360 / TotalTime, round_diff * 1 / TotalTime, round_diff * 1 / TotalTime);
   spriteBase.pushSprite(0, 0);
-  // i += 10;
-  // if (i > 360)
-  // {
-  //   i = 0;
-  // }
-  // delay(100);
 }
 // ---------------------------------------------------------------
-void shakeReset()
+// 加速度のセットアップ
+void acc_setup()
+{
+  M5.IMU.Init();                     // 6軸センサ初期化
+  M5.IMU.SetAccelFsr(M5.IMU.AFS_2G); // 加速度センサースケール初期値 ±2G(2,4,8,16)
+}
+// ---------------------------------------------------------------
+// 加速度リセット用
+void zeroSet()
+{
+  M5.update();
+  M5.IMU.getAccelData(&accX, &accY, &accZ); // 加速度データ取得
+  baseAccX = accX;                          // 取得値を補正値としてセット
+  baseAccY = accY;
+  baseAccZ = accZ;
+}
+// ---------------------------------------------------------------
+// 端末を振ってリセット画面へ
+boolean shakeReset()
 {
   M5.update();
   M5.IMU.getAccelData(&accX, &accY, &accZ); // 加速度データ取得
@@ -387,24 +357,11 @@ void shakeReset()
 
   if (diffAccY > 0.5)
   {
-    reset_flg = true;
+    return true;
   }
-}
-// ---------------------------------------------------------------
-// 加速度リセット用
-void zeroSet()
-{
-  M5.IMU.getAccelData(&accX, &accY, &accZ); // 加速度データ取得
-  baseAccX = accX;                          // 取得値を補正値としてセット
-  baseAccY = accY;
-  baseAccZ = accZ;
-}
-// ---------------------------------------------------------------
-// 加速度取得用
-void check_acc()
-{
-  zeroSet();
-  M5.update();                              // ボタン状態更新
-  M5.IMU.getAccelData(&accX, &accY, &accZ); // 加速度データ取得
+  else
+  {
+    return false;
+  }
 }
 // ---------------------------------------------------------------
