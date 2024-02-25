@@ -8,10 +8,6 @@
 #include <driver/i2s.h>
 #include <WiFi.h>
 
-#include "AudioFileSourceSD.h"
-#include "AudioFileSourceID3.h"
-#include "AudioGeneratorMP3.h"
-#include "AudioOutputI2S.h"
 #include "wav1.h"
 #include "driver/i2s.h"
 
@@ -72,16 +68,14 @@ void zeroSet();
 boolean shakeReset();
 
 // 効果音
-AudioGeneratorMP3 *mp3;
-AudioFileSourceSD *file;
-AudioOutputI2S *out;
-AudioFileSourceID3 *id3;
-#define OUTPUT_GAIN 80
-bool se_flag = false;
-
-#define SPEAKER_I2S_NUMBER      I2S_NUM_0
+#define SPEAKER_I2S_NUMBER I2S_NUM_0
 const unsigned char *wavList[] = {wav1};
 const size_t wavSize[] = {sizeof(wav1)};
+
+// マルチタスク
+TaskHandle_t task1Handle;
+QueueHandle_t xQueue1;
+#define QUEUE1_LENGTH 5
 
 // プロトタイプ宣言
 void Fingertip2Wrist(int ledPosition, int ledBrightness);
@@ -94,7 +88,7 @@ void acc_setup();
 void sound_effect_setup();
 void SEcontrol();
 void InitI2SSpeakerOrMic(int mode);
-
+void multi_task_setup();
 // ---------------------------------------------------------------
 void setup()
 {
@@ -107,9 +101,11 @@ void setup()
   Wire.begin();
 
   wait_display_setup(); // 待機画面SCANのsetup
-  acc_setup(); // shake_resetのためのsetup
-  sound_effect_setup();
+  acc_setup();          // shake_resetのためのsetup
+  sound_effect_setup(); // 効果音のためのsetup
 
+  xQueue1 = xQueueCreate(QUEUE1_LENGTH, sizeof(boolean));
+  // multi_task_setup(); // マルチタスク実装のためのsetup
 }
 
 // ---------------------------------------------------------------
@@ -127,7 +123,8 @@ void loop()
       CardID = identifyCard();
       // CardID = 2;
       isCard = true;
-      se_flag = true;
+      static bool data = true;
+      xQueueSend(xQueue1, &data, 0);
       startMillis = currentMillis;
     }
   }
@@ -135,14 +132,15 @@ void loop()
   {
     LEDcontrol(CardID, startMillis, currentMillis);
     LCDcontrol(CardID, startMillis, currentMillis);
-    SEcontrol();
+    // SEcontrol();
+    multi_task_setup();
     Serial.printf("startMillis = %d, currentMillis = %d, diff = %d \n", startMillis, currentMillis, (currentMillis - startMillis));
 
     if ((currentMillis - startMillis) > TotalTime)
     {
       zeroSet();
       while (!shakeReset())
-      isCard = false; // isCardをbooleanで更新
+        isCard = false; // isCardをbooleanで更新
     }
   }
 }
@@ -396,38 +394,14 @@ void sound_effect_setup()
 {
   M5.Axp.SetSpkEnable(true);
   InitI2SSpeakerOrMic(MODE_SPK);
-
-  file = new AudioFileSourceSD("/mp3/drumroll.mp3");
-  id3 = new AudioFileSourceID3(file);
-  out = new AudioOutputI2S(0, 0); // Output to ExternalDAC
-  out->SetPinout(12, 0, 2);
-  out->SetOutputModeMono(true);
-  out->SetGain(0.3);
-  mp3 = new AudioGeneratorMP3();
 }
 // ---------------------------------------------------------------
 // 効果音コントロール
 void SEcontrol()
 {
-  // if (se_flag)
-  // {
-  //   mp3->begin(id3, out);
-  //   se_flag = false;
-  // }
-
-  // if (mp3->isRunning())
-  // {
-  //   if (!mp3->loop())
-  //     mp3->stop();
-  // }
-  // else
-  // {
-  //   Serial.printf("MP3 done\n");
-  // }
   size_t bytes_written;
   i2s_write(SPEAKER_I2S_NUMBER, wavList[0], wavSize[0], &bytes_written, portMAX_DELAY);
   i2s_zero_dma_buffer(SPEAKER_I2S_NUMBER);
-
 }
 // ---------------------------------------------------------------
 void InitI2SSpeakerOrMic(int mode)
@@ -435,34 +409,71 @@ void InitI2SSpeakerOrMic(int mode)
   esp_err_t err = ESP_OK;
   i2s_driver_uninstall(SPEAKER_I2S_NUMBER);
   i2s_config_t i2s_config = {
-    .mode                 = (i2s_mode_t)(I2S_MODE_MASTER),
-    .sample_rate          = 16000,
-    .bits_per_sample      = I2S_BITS_PER_SAMPLE_16BIT,
-    .channel_format       = I2S_CHANNEL_FMT_ALL_RIGHT,
-    .communication_format = I2S_COMM_FORMAT_I2S,
-    .intr_alloc_flags     = ESP_INTR_FLAG_LEVEL1,
-    .dma_buf_count        = 6,
-    .dma_buf_len          = 60,
-    .use_apll             = false,
-    .tx_desc_auto_clear   = true,
-    .fixed_mclk           = 0
-  };
-  if (mode == MODE_MIC) {
+      .mode = (i2s_mode_t)(I2S_MODE_MASTER),
+      .sample_rate = 16000,
+      .bits_per_sample = I2S_BITS_PER_SAMPLE_16BIT,
+      .channel_format = I2S_CHANNEL_FMT_ALL_RIGHT,
+      .communication_format = I2S_COMM_FORMAT_I2S,
+      .intr_alloc_flags = ESP_INTR_FLAG_LEVEL1,
+      .dma_buf_count = 6,
+      .dma_buf_len = 60,
+      .use_apll = false,
+      .tx_desc_auto_clear = true,
+      .fixed_mclk = 0};
+  if (mode == MODE_MIC)
+  {
     i2s_config.mode = (i2s_mode_t)(I2S_MODE_MASTER | I2S_MODE_RX | I2S_MODE_PDM);
-  } else {
+  }
+  else
+  {
     i2s_config.mode = (i2s_mode_t)(I2S_MODE_MASTER | I2S_MODE_TX);
   }
   err += i2s_driver_install(SPEAKER_I2S_NUMBER, &i2s_config, 0, NULL);
   i2s_pin_config_t tx_pin_config = {
-    .bck_io_num           = CONFIG_I2S_BCK_PIN,
-    .ws_io_num            = CONFIG_I2S_LRCK_PIN,
-    .data_out_num         = CONFIG_I2S_DATA_PIN,
-    .data_in_num          = CONFIG_I2S_DATA_IN_PIN,
+      .bck_io_num = CONFIG_I2S_BCK_PIN,
+      .ws_io_num = CONFIG_I2S_LRCK_PIN,
+      .data_out_num = CONFIG_I2S_DATA_PIN,
+      .data_in_num = CONFIG_I2S_DATA_IN_PIN,
   };
   err += i2s_set_pin(SPEAKER_I2S_NUMBER, &tx_pin_config);
-  if (mode != MODE_MIC) {
+  if (mode != MODE_MIC)
+  {
     err += i2s_set_clk(SPEAKER_I2S_NUMBER, 16000, I2S_BITS_PER_SAMPLE_16BIT, I2S_CHANNEL_MONO);
   }
   i2s_zero_dma_buffer(SPEAKER_I2S_NUMBER);
+}
+// ---------------------------------------------------------------
+void task1(void *pvParameters)
+{
+  bool receivedData;
+  if(xQueueReceive(xQueue1, &receivedData, 0) == pdTRUE){
+    if(receivedData==1){
+      SEcontrol();
+    }
+  }
+
+  task1Handle = NULL;
+  vTaskDelete(NULL);
+
+  // while (1)
+  // {
+  //   SEcontrol();
+  //   // Wait(1ミリ秒以上を推奨)
+  //   delay(1);
+  // }
+
+}
+// ---------------------------------------------------------------
+void multi_task_setup()
+{
+  xTaskCreateUniversal(
+      task1,        // 作成するタスク関数
+      "SE_task",    // 表示用タスク名
+      8192,         // スタックメモリ量
+      NULL,         // 起動パラメータ
+      0,            // 優先度
+      &task1Handle, // タスクハンドル
+      0             // 実行するコア
+  );
 }
 // ---------------------------------------------------------------
