@@ -90,6 +90,7 @@ void loop()
   if (!isCard)
   {
     pixels.clear(); // NeoPixelのリセット
+    pixels.show();  // NeoPixelのリセット
     wait_display(); // 待機画面
     if (isNewCard())
     {
