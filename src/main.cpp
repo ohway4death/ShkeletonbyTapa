@@ -8,11 +8,21 @@
 #include <driver/i2s.h>
 #include <WiFi.h>
 
-#include "wav1.h"
-#include "driver/i2s.h"
+#include "aura.h"
+#include "beamcharge.h"
+#include "charge.h"
+#include "drumroll.h"
+#include "wafu.h"
 
 /**RFID**/
 MFRC522_I2C mfrc522(0x28, -1); // Create MFRC522 instance.
+
+#define ace   "04:28:C2:9A"
+#define jack  "04:28:BF:9A"
+#define queen "04:28:C0:9A"
+#define king  "04:28:C1:9A"
+#define ten   "04:28:BE:9A"
+#define joker "04:28:BD:9A"
 
 /**LED**/
 #define PIN 26
@@ -31,9 +41,8 @@ int littleFingerLine[5] = {18, 19, 20};
 
 // 演出制御
 bool isCard = false; // カード読み取りフラグ
-#define ace "155 43 9 12"
 int CardID = 0;
-float TotalTime = 5000; // 演出合計時間(ms)
+float TotalTime = 4000; // 演出合計時間(ms)
 unsigned long startMillis = 0;
 unsigned long currentMillis = 0;
 unsigned long previousLEDTime = 0;
@@ -51,10 +60,6 @@ void wait_display_setup();
 void wait_display();
 
 // 回転演出
-#define ace "1d f4 df 06"
-#define jack "1d 75 01 55"
-#define queen "1d fd 6e 58"
-#define king "1d e1 27 55"
 void rotate_display(float diff, int cardId);
 
 // 加速度リセット
@@ -69,8 +74,8 @@ boolean shakeReset();
 
 // 効果音
 #define SPEAKER_I2S_NUMBER I2S_NUM_0
-const unsigned char *wavList[] = {wav1};
-const size_t wavSize[] = {sizeof(wav1)};
+const unsigned char *wavList[] = {aura, beamcharge, charge, drumroll, wafu};
+const size_t wavSize[] = {sizeof(aura), sizeof(beamcharge), sizeof(charge), sizeof(drumroll), sizeof(wafu)};
 
 // マルチタスク
 TaskHandle_t task1Handle;
@@ -99,13 +104,13 @@ void setup()
 
   M5.begin();
   Wire.begin();
+  mfrc522.PCD_Init();
 
   wait_display_setup(); // 待機画面SCANのsetup
   acc_setup();          // shake_resetのためのsetup
   sound_effect_setup(); // 効果音のためのsetup
 
   xQueue1 = xQueueCreate(QUEUE1_LENGTH, sizeof(boolean));
-  // multi_task_setup(); // マルチタスク実装のためのsetup
 }
 
 // ---------------------------------------------------------------
@@ -134,7 +139,7 @@ void loop()
     LCDcontrol(CardID, startMillis, currentMillis);
     // SEcontrol();
     multi_task_setup();
-    Serial.printf("startMillis = %d, currentMillis = %d, diff = %d \n", startMillis, currentMillis, (currentMillis - startMillis));
+    Serial.printf("startMillis = %d, currentMillis = %d, diff = %d\n", startMillis, currentMillis, (currentMillis - startMillis));
 
     if ((currentMillis - startMillis) > TotalTime)
     {
@@ -172,12 +177,34 @@ int identifyCard()
     }
   }
   String strUID = strBuf[0] + " " + strBuf[1] + " " + strBuf[2] + " " + strBuf[3];
+  Serial.printf("%s",strUID);
 
   // カードを増やしたい場合はdefine増やしてからここに追加
+  // switch文でstringの比較ができない
   if (strUID.equalsIgnoreCase(ace))
   {
     return 1;
+  }else if (strUID.equalsIgnoreCase(ten))
+  {
+    return 10;
+  }else if (strUID.equalsIgnoreCase(jack))
+  {
+    return 11;
+  }else if (strUID.equalsIgnoreCase(queen))
+  {
+    return 12;
+  }else if (strUID.equalsIgnoreCase(king))
+  {
+    return 13;
+  }else if (strUID.equalsIgnoreCase(joker))
+  {
+    return 0;
+  }else{
+    return 1; // test用
   }
+  
+
+
 }
 // ---------------------------------------------------------------
 void LEDcontrol(int ID, unsigned long StartTime, unsigned long CurrentTime)
@@ -343,9 +370,26 @@ void rotate_display(float diff, int cardId)
   case 1:
     spriteImage.drawJpgFile(SD, "/trump/card_spade_01.jpg", 0, 0);
     break;
+  case 10:
+    spriteImage.drawJpgFile(SD, "/trump/card_spade_10.jpg", 0, 0);
+    break;
+  case 11:
+    spriteImage.drawJpgFile(SD, "/trump/card_spade_11.jpg", 0, 0);
+    break;
+  case 12:
+    spriteImage.drawJpgFile(SD, "/trump/card_spade_12.jpg", 0, 0);
+    break;
+  case 13:
+    spriteImage.drawJpgFile(SD, "/trump/card_spade_13.jpg", 0, 0);
+    break;
+  case  0:
+    spriteImage.drawJpgFile(SD, "/trump/card_spade_05.jpg", 0, 0);
+    break;
   }
 
   float round_diff = round(diff / 100) * 100; // きっちり5000で回転が終わるように調整
+  // Serial.printf("--------------------------- \n");
+  // Serial.printf("%lf \n", round_diff);
 
   spriteBase.fillScreen(BLACK); // 画面の塗りつぶし
   spriteImage.pushRotateZoom(160, 120, round_diff * 360 / TotalTime, round_diff * 1 / TotalTime, round_diff * 1 / TotalTime);
@@ -399,8 +443,12 @@ void sound_effect_setup()
 // 効果音コントロール
 void SEcontrol()
 {
+  int rand_int = random(5);
   size_t bytes_written;
-  i2s_write(SPEAKER_I2S_NUMBER, wavList[0], wavSize[0], &bytes_written, portMAX_DELAY);
+
+  // rand_int = 0; // test用
+
+  i2s_write(SPEAKER_I2S_NUMBER, wavList[rand_int], wavSize[rand_int], &bytes_written, portMAX_DELAY);
   i2s_zero_dma_buffer(SPEAKER_I2S_NUMBER);
 }
 // ---------------------------------------------------------------
@@ -446,8 +494,10 @@ void InitI2SSpeakerOrMic(int mode)
 void task1(void *pvParameters)
 {
   bool receivedData;
-  if(xQueueReceive(xQueue1, &receivedData, 0) == pdTRUE){
-    if(receivedData==1){
+  if (xQueueReceive(xQueue1, &receivedData, 0) == pdTRUE)
+  {
+    if (receivedData == 1)
+    {
       SEcontrol();
     }
   }
@@ -461,7 +511,6 @@ void task1(void *pvParameters)
   //   // Wait(1ミリ秒以上を推奨)
   //   delay(1);
   // }
-
 }
 // ---------------------------------------------------------------
 void multi_task_setup()
