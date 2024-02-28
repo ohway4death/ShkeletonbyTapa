@@ -62,6 +62,11 @@ void wait_display();
 // 回転演出
 void rotate_display(float diff, int cardId);
 
+// 穴あき演出
+void MaskReveal_Sphere();
+LGFX_Sprite spriteMask;
+
+
 // 加速度リセット
 float baseAccX, baseAccY, baseAccZ = 0; // 基準加速度格納用
 float accX, accY, accZ;                 // 加速度格納用
@@ -249,7 +254,7 @@ void LCDcontrol(int ID, unsigned long StartTime, unsigned long CurrentTime)
     // ledPosition =0;
   }
 
-  int action = 2; // 演出を指定
+  int action = 3; // 演出を指定
 
   switch (action)
   {
@@ -268,6 +273,15 @@ void LCDcontrol(int ID, unsigned long StartTime, unsigned long CurrentTime)
       previousLCDTime = CurrentTime;
       rotate_display(diff, ID);
     }
+    break;
+  case 3:
+    if ((CurrentTime - previousLCDTime) > 100)
+    { // 100ms間隔で更新
+      float diff = currentMillis - startMillis;
+      previousLCDTime = CurrentTime;
+      MaskReveal_Sphere();
+    }
+    break;
   default:
     break;
   }
@@ -325,6 +339,7 @@ void wait_display_setup()
   spriteWord2.setColorDepth(8); // カラーモード設定
   spriteWord3.setColorDepth(8); // カラーモード設定
   spriteWord4.setColorDepth(8); // カラーモード設定
+  spriteMask.setColorDepth(8); // カラーモード設定
 
   spriteImage.createSprite(320, 218);
   spriteBase.createSprite(320, 240);
@@ -332,6 +347,7 @@ void wait_display_setup()
   spriteWord2.createSprite(80, 80);
   spriteWord3.createSprite(80, 80);
   spriteWord4.createSprite(80, 80);
+  spriteMask.createSprite(320, 240);
 
   spriteWord1.setTextSize(6); // 文字サイズ42px
   spriteWord2.setTextSize(6); // 文字サイズ42px
@@ -524,5 +540,23 @@ void multi_task_setup()
       &task1Handle, // タスクハンドル
       0             // 実行するコア
   );
+}
+// ---------------------------------------------------------------
+void MaskReveal_Sphere() {
+  int boxWidth = 30;  // 箱の幅
+  int boxHeight = 30;  // 箱の高さ
+
+  int x = random(360 - boxWidth);
+  int y = random(240 - boxHeight);
+
+  spriteBase.fillScreen(BLACK); // 画面の塗りつぶし
+  //spriteImage.fillCircle(160, 120, 50, RED);
+
+  spriteImage.drawJpgFile(SD, "/trump/card_spade_01.jpg", 0, 0);  // 絵をセット
+  spriteImage.fillCircle(160, 120, 50, RED);                      // 絵の上に円を描画
+  spriteImage.pushRotateZoom(160, 120, 0, 1, 1);                  // 絵をBaseにプッシュ
+
+  //spriteMask.pushSprite(0, 0);
+  spriteBase.pushSprite(0, 0);                                    // Baseを画面にプッシュ
 }
 // ---------------------------------------------------------------
