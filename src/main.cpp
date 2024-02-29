@@ -14,14 +14,19 @@
 #include "drumroll.h"
 #include "wafu.h"
 
+#include <iostream>
+#include <vector>
+#include <cstdlib>
+#include <ctime>
+
 /**RFID**/
 MFRC522_I2C mfrc522(0x28, -1); // Create MFRC522 instance.
 
-#define ace   "04:28:C2:9A"
-#define jack  "04:28:BF:9A"
+#define ace "04:28:C2:9A"
+#define jack "04:28:BF:9A"
 #define queen "04:28:C0:9A"
-#define king  "04:28:C1:9A"
-#define ten   "04:28:BE:9A"
+#define king "04:28:C1:9A"
+#define ten "04:28:BE:9A"
 #define joker "04:28:BD:9A"
 
 /**LED**/
@@ -52,7 +57,7 @@ unsigned long previousLCDTime = 0;
 // 待機画面
 static LGFX lcd;                      // LGFXのインスタンスを作成。
 LGFX_Sprite spriteBase(&lcd);         // スプライトを使う場合はLGFX_Spriteのインスタンスを作成。
-LGFX_Sprite spriteSub(&spriteBase); // スプライトを使う場合はLGFX_Spriteのインスタンスを作成。
+LGFX_Sprite spriteSub(&spriteBase);   // スプライトを使う場合はLGFX_Spriteのインスタンスを作成。
 LGFX_Sprite spriteWord1(&spriteBase); // スプライトを使う場合はLGFX_Spriteのインスタンスを作成。
 LGFX_Sprite spriteWord2(&spriteBase); // スプライトを使う場合はLGFX_Spriteのインスタンスを作成。
 LGFX_Sprite spriteWord3(&spriteBase); // スプライトを使う場合はLGFX_Spriteのインスタンスを作成。
@@ -66,6 +71,13 @@ void rotate_display(float diff, int cardId);
 
 // 穴あき演出
 void MaskReveal_Sphere();
+int getRandomValue(int min, int max);
+std::vector<int> myList;
+void MaskReveal_Sphere_setup();
+
+// カーテン的な
+void MaskReveal_Rectangle();
+int count;
 
 // 加速度リセット
 float baseAccX, baseAccY, baseAccZ = 0; // 基準加速度格納用
@@ -81,7 +93,6 @@ boolean shakeReset();
 #define SPEAKER_I2S_NUMBER I2S_NUM_0
 const unsigned char *wavList[] = {aura, beamcharge, charge, drumroll, wafu};
 const size_t wavSize[] = {sizeof(aura), sizeof(beamcharge), sizeof(charge), sizeof(drumroll), sizeof(wafu)};
-
 
 // マルチタスク
 TaskHandle_t task1Handle;
@@ -120,7 +131,6 @@ void setup()
   sound_effect_setup(); // 効果音のためのsetup
 
   xQueue1 = xQueueCreate(QUEUE1_LENGTH, sizeof(boolean));
-
 }
 
 // ---------------------------------------------------------------
@@ -141,7 +151,9 @@ void loop()
       static bool data = true;
       xQueueSend(xQueue1, &data, 0);
       reset_display();
+      count = 0;
       startMillis = currentMillis;
+      MaskReveal_Sphere_setup();
     }
   }
   else
@@ -150,9 +162,9 @@ void loop()
     LCDcontrol(CardID, startMillis, currentMillis);
 
     multi_task_setup();
-    
+
     Serial.printf("startMillis = %d, currentMillis = %d, diff = %d\n", startMillis, currentMillis, (currentMillis - startMillis));
-    
+
     if ((currentMillis - startMillis) > TotalTime)
     {
       zeroSet();
@@ -190,7 +202,7 @@ int identifyCard()
   }
   String strUID = strBuf[0] + " " + strBuf[1] + " " + strBuf[2] + " " + strBuf[3];
 
-  Serial.printf("%s",strUID);
+  Serial.printf("%s", strUID);
 
   // カードを増やしたい場合はdefine増やしてからここに追加
   // switch文でstringの比較ができない
@@ -198,27 +210,31 @@ int identifyCard()
   if (strUID.equalsIgnoreCase(ace))
   {
     return 1;
-  }else if (strUID.equalsIgnoreCase(ten))
+  }
+  else if (strUID.equalsIgnoreCase(ten))
   {
     return 10;
-  }else if (strUID.equalsIgnoreCase(jack))
+  }
+  else if (strUID.equalsIgnoreCase(jack))
   {
     return 11;
-  }else if (strUID.equalsIgnoreCase(queen))
+  }
+  else if (strUID.equalsIgnoreCase(queen))
   {
     return 12;
-  }else if (strUID.equalsIgnoreCase(king))
+  }
+  else if (strUID.equalsIgnoreCase(king))
   {
     return 13;
-  }else if (strUID.equalsIgnoreCase(joker))
+  }
+  else if (strUID.equalsIgnoreCase(joker))
   {
     return 0;
-  }else{
+  }
+  else
+  {
     return 1; // test用
   }
-  
-
-
 }
 // ---------------------------------------------------------------
 void LEDcontrol(int ID, unsigned long StartTime, unsigned long CurrentTime)
@@ -283,14 +299,13 @@ void LCDcontrol(int ID, unsigned long StartTime, unsigned long CurrentTime)
       rotate_display(diff, ID);
     }
     break;
-      
+
   case 3:
     if ((CurrentTime - previousLCDTime) > 100)
     { // 100ms間隔で更新
       float diff = currentMillis - startMillis;
       previousLCDTime = CurrentTime;
       MaskReveal_Sphere();
-
     }
     break;
   case 4:
@@ -299,7 +314,6 @@ void LCDcontrol(int ID, unsigned long StartTime, unsigned long CurrentTime)
       float diff = currentMillis - startMillis;
       previousLCDTime = CurrentTime;
       MaskReveal_Rectangle();
-      count = 0;
     }
     break;
   default:
@@ -353,7 +367,7 @@ void uid_display_proc()
 void wait_display_setup()
 {
   lcd.init();                   // LCD初期化
-  spriteSub.setColorDepth(8); // カラーモード設定
+  spriteSub.setColorDepth(8);   // カラーモード設定
   spriteBase.setColorDepth(8);  // カラーモード設定
   spriteWord1.setColorDepth(8); // カラーモード設定
   spriteWord2.setColorDepth(8); // カラーモード設定
@@ -365,7 +379,7 @@ void wait_display_setup()
   spriteWord3.setTextSize(6); // 文字サイズ42px
   spriteWord4.setTextSize(6); // 文字サイズ42px
 
-  spriteSub.createSprite(320, 218);
+  spriteSub.createSprite(320, 206);
   spriteBase.createSprite(320, 240);
   spriteWord1.createSprite(80, 80);
   spriteWord2.createSprite(80, 80);
@@ -394,7 +408,8 @@ void wait_display()
   spriteBase.pushSprite(&lcd, 0, 0);
 }
 // ---------------------------------------------------------------
-void reset_display(){
+void reset_display()
+{
   spriteBase.fillScreen(BLACK);
   spriteSub.fillScreen(BLACK);
   spriteBase.pushSprite(&lcd, 0, 0);
@@ -408,22 +423,22 @@ void rotate_display(float diff, int cardId)
   switch (cardId)
   {
   case 1:
-    spriteSub.drawJpgFile(SD, "/trump/card_spade_01.jpg", 0, 0);
+    spriteSub.drawJpgFile(SD, "/real_trump/card_heart_01.jpg", 0, 0);
     break;
   case 10:
-    spriteSub.drawJpgFile(SD, "/trump/card_spade_10.jpg", 0, 0);
+    spriteSub.drawJpgFile(SD, "/real_trump/card_heart_10.jpg", 0, 0);
     break;
   case 11:
-    spriteSub.drawJpgFile(SD, "/trump/card_spade_11.jpg", 0, 0);
+    spriteSub.drawJpgFile(SD, "/real_trump/card_heart_11.jpg", 0, 0);
     break;
   case 12:
-    spriteSub.drawJpgFile(SD, "/trump/card_spade_12.jpg", 0, 0);
+    spriteSub.drawJpgFile(SD, "/real_trump/card_heart_12.jpg", 0, 0);
     break;
   case 13:
-    spriteSub.drawJpgFile(SD, "/trump/card_spade_13.jpg", 0, 0);
+    spriteSub.drawJpgFile(SD, "/real_trump/card_heart_13.jpg", 0, 0);
     break;
-  case  0:
-    spriteSub.drawJpgFile(SD, "/trump/card_spade_05.jpg", 0, 0);
+  case 0:
+    spriteSub.drawJpgFile(SD, "/real_trump/card_heart_joker.jpg", 0, 0);
     break;
   }
 
@@ -431,9 +446,9 @@ void rotate_display(float diff, int cardId)
   // Serial.printf("--------------------------- \n");
   Serial.printf("%lf \n", round(diff / 100.0));
 
-  spriteBase.fillScreen(BLACK); //画面の塗りつぶし
+  spriteBase.fillScreen(BLACK); // 画面の塗りつぶし
   spriteSub.pushRotateZoom(160, 120, round_diff * 360 / TotalTime, round_diff * 1 / TotalTime, round_diff * 1 / TotalTime);
-  //spriteBase.pushRotateZoom(160, 120, round_diff * 360 / TotalTime, round_diff * 1 / TotalTime, round_diff * 1 / TotalTime);
+  // spriteBase.pushRotateZoom(160, 120, round_diff * 360 / TotalTime, round_diff * 1 / TotalTime, round_diff * 1 / TotalTime);
   spriteBase.pushSprite(0, 0);
 }
 // ---------------------------------------------------------------
@@ -539,7 +554,7 @@ void task1(void *pvParameters)
   {
     if (receivedData == 1)
     {
-      //SEcontrol();
+      SEcontrol();
     }
   }
 
@@ -567,43 +582,68 @@ void multi_task_setup()
   );
 }
 // ---------------------------------------------------------------
-void MaskReveal_Sphere() {
-  int boxWidth = 30;  // 箱の幅
-  int boxHeight = 30;  // 箱の高さ
+void MaskReveal_Sphere_setup(){
+  for (int i = 0; i <= 39; ++i) {
+    myList.push_back(i);
+  }
+}
+int getRandomValue(int min, int max) {
+    return min + rand() % (max - min + 1);
+}
 
-  int x = random(360 - boxWidth);
-  int y = random(240 - boxHeight);
+// ---------------------------------------------------------------
+void MaskReveal_Sphere()
+{
+
+  int randomIndex = getRandomValue(0, myList.size() - 1);
+  int selectedValue = myList[randomIndex];
+
+  // int x = random(360 - boxWidth);
+  // int y = random(240 - boxHeight);
+
+  int x = random(selectedValue % 8 * 40, selectedValue % 8 * 40 + 39);
+  int y = random(selectedValue / 8 * 40, selectedValue / 8 * 40 + 39);
 
   spriteBase.fillScreen(BLACK); // 画面の塗りつぶし
-  //spriteSub.fillScreen(BLACK);  // 画面の塗りつぶし
+  // spriteSub.fillScreen(BLACK);  // 画面の塗りつぶし
 
-  spriteBase.drawJpgFile(SD, "/trump/card_spade_01.jpg", 0, 11);  // 絵をセット
-  spriteSub.fillCircle(x, y, 50, RED);                        // 円を作成
+  spriteBase.drawJpgFile(SD, "/real_trump/card_heart_01.jpg", 0, 17); // 絵をセット
+  spriteSub.fillCircle(x, y, 60, RED);                                // 円を作成
 
-  spriteSub.pushSprite(0, 11, RED);                                // REDを透明色にしてSubをBaseにプッシュ。カードの一部だけが見えるはず。
-  spriteBase.pushSprite(0, 0);                                    // Baseを画面にプッシュ
+  spriteSub.pushSprite(0, 17, RED); // REDを透明色にしてSubをBaseにプッシュ。カードの一部だけが見えるはず。
+  spriteBase.pushSprite(0, 0);      // Baseを画面にプッシュ
+
+  myList.erase(myList.begin() + randomIndex);
 }
 // ---------------------------------------------------------------
-// 四角形が左上から右下に流れていく　横320縦218＝69760　40回で全オープン　69760/40=1744
-int count;
-void MaskReveal_Rectangle() {
-  
-  int boxWidth  = 44;  // 箱の幅
-  int boxHeight = 40;  // 箱の高さ
-  
-  int x = count * 44 % 8
-  int y = count * 40
+// カーテン的な感じにする
+void MaskReveal_Rectangle()
+{
+
+  int boxWidth = 3;    // 箱の幅
+  int boxHeight = 320; // 箱の高さ
+
+  int left_y =  100 - count * 3;
+  int right_y = 103 + count * 3;
 
   spriteBase.fillScreen(BLACK); // 画面の塗りつぶし
   //spriteSub.fillScreen(BLACK);  // 画面の塗りつぶし
 
-  spriteBase.drawJpgFile(SD, "/trump/card_spade_01.jpg", 0, 11);  // 絵をセット
-  spriteSub.fillRect(x,y,boxWidth,boxHeight,RED);                        // 円を作成
+  // if (count > 4)
+  // {
+  //   spriteBase.drawJpgFile(SD, "/real_trump/card_heart_01.jpg", 0, 17); // 絵をセット
+  //   spriteSub.fillRect(0, left_y,  boxHeight, boxWidth, RED);       // 長方形
+  //   spriteSub.fillRect(0, right_y, boxHeight, boxWidth, RED);       // 長方形
+  //   spriteSub.pushSprite(0, 17, RED);                               // REDを透明色にしてSubをBaseにプッシュ。カードの一部だけが見えるはず。
+  // }
 
-  spriteSub.pushSprite(0, 11, RED);                                // REDを透明色にしてSubをBaseにプッシュ。カードの一部だけが見えるはず。
-  spriteBase.pushSprite(0, 0);                                    // Baseを画面にプッシュ
+  spriteBase.drawJpgFile(SD, "/real_trump/card_heart_01.jpg", 0, 17); // 絵をセット
+  spriteSub.fillRect(0, left_y,  boxHeight, boxWidth, RED);       // 長方形
+  spriteSub.fillRect(0, right_y, boxHeight, boxWidth, RED);       // 長方形
+  spriteSub.pushSprite(0, 17, RED);                               // REDを透明色にしてSubをBaseにプッシュ。カードの一部だけが見えるはず。
+
+  spriteBase.pushSprite(0, 0); // Baseを画面にプッシュ
 
   count++;
 }
 // ---------------------------------------------------------------
-
