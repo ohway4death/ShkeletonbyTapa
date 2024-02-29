@@ -8,8 +8,21 @@
 #include <driver/i2s.h>
 #include <WiFi.h>
 
+#include "aura.h"
+#include "beamcharge.h"
+#include "charge.h"
+#include "drumroll.h"
+#include "wafu.h"
+
 /**RFID**/
 MFRC522_I2C mfrc522(0x28, -1); // Create MFRC522 instance.
+
+#define ace   "04:28:C2:9A"
+#define jack  "04:28:BF:9A"
+#define queen "04:28:C0:9A"
+#define king  "04:28:C1:9A"
+#define ten   "04:28:BE:9A"
+#define joker "04:28:BD:9A"
 
 /**LED**/
 #define PIN 26
@@ -28,9 +41,9 @@ int littleFingerLine[5] = {18, 19, 20};
 
 // 演出制御
 bool isCard = false; // カード読み取りフラグ
-#define ace "155 43 9 12"
 int CardID = 0;
-float TotalTime = 5000; // 演出合計時間(ms)
+float TotalTime = 4000; // 演出合計時間(ms)
+
 unsigned long startMillis = 0;
 unsigned long currentMillis = 0;
 unsigned long previousLEDTime = 0;
@@ -48,11 +61,11 @@ void wait_display_setup();
 void wait_display();
 
 // 回転演出
-#define ace "1d f4 df 06"
-#define jack "1d 75 01 55"
-#define queen "1d fd 6e 58"
-#define king "1d e1 27 55"
 void rotate_display(float diff, int cardId);
+
+// 穴あき演出
+void MaskReveal_Sphere();
+LGFX_Sprite spriteMask;
 
 // 加速度リセット
 float baseAccX, baseAccY, baseAccZ = 0; // 基準加速度格納用
@@ -64,6 +77,18 @@ void check_acc();
 void zeroSet();
 boolean shakeReset();
 
+// 効果音
+#define SPEAKER_I2S_NUMBER I2S_NUM_0
+const unsigned char *wavList[] = {aura, beamcharge, charge, drumroll, wafu};
+const size_t wavSize[] = {sizeof(aura), sizeof(beamcharge), sizeof(charge), sizeof(drumroll), sizeof(wafu)};
+
+
+// マルチタスク
+TaskHandle_t task1Handle;
+QueueHandle_t xQueue1;
+#define QUEUE1_LENGTH 5
+
+// プロトタイプ宣言
 void Fingertip2Wrist(int ledPosition, int ledBrightness);
 bool isNewCard();
 int identifyCard();
@@ -71,6 +96,11 @@ void LEDcontrol(int B, unsigned long C, unsigned long D);
 void LCDcontrol(int B, unsigned long C, unsigned long D);
 void uid_display_proc();
 void acc_setup();
+
+void sound_effect_setup();
+void SEcontrol();
+void InitI2SSpeakerOrMic(int mode);
+void multi_task_setup();
 
 // ---------------------------------------------------------------
 void setup()
@@ -82,10 +112,15 @@ void setup()
 
   M5.begin();
   Wire.begin();
+  mfrc522.PCD_Init();
 
   wait_display_setup(); // 待機画面SCANのsetup
 
-  acc_setup(); // shake_resetのためのsetup
+  acc_setup();          // shake_resetのためのsetup
+  sound_effect_setup(); // 効果音のためのsetup
+
+  xQueue1 = xQueueCreate(QUEUE1_LENGTH, sizeof(boolean));
+
 }
 
 // ---------------------------------------------------------------
@@ -103,6 +138,8 @@ void loop()
       CardID = identifyCard();
       // CardID = 2;
       isCard = true;
+      static bool data = true;
+      xQueueSend(xQueue1, &data, 0);
       startMillis = currentMillis;
     }
   }
@@ -110,7 +147,10 @@ void loop()
   {
     LEDcontrol(CardID, startMillis, currentMillis);
     LCDcontrol(CardID, startMillis, currentMillis);
-    Serial.printf("startMillis = %d, currentMillis = %d, diff = %d \n", startMillis, currentMillis, (currentMillis - startMillis));
+
+    multi_task_setup();
+    
+    Serial.printf("startMillis = %d, currentMillis = %d, diff = %d\n", startMillis, currentMillis, (currentMillis - startMillis));
     
     if ((currentMillis - startMillis) > TotalTime)
     {
@@ -149,11 +189,35 @@ int identifyCard()
   }
   String strUID = strBuf[0] + " " + strBuf[1] + " " + strBuf[2] + " " + strBuf[3];
 
+  Serial.printf("%s",strUID);
+
+  // カードを増やしたい場合はdefine増やしてからここに追加
+  // switch文でstringの比較ができない
   // カードを増やしたい場合はdefine増やしてからここに追加
   if (strUID.equalsIgnoreCase(ace))
   {
     return 1;
+  }else if (strUID.equalsIgnoreCase(ten))
+  {
+    return 10;
+  }else if (strUID.equalsIgnoreCase(jack))
+  {
+    return 11;
+  }else if (strUID.equalsIgnoreCase(queen))
+  {
+    return 12;
+  }else if (strUID.equalsIgnoreCase(king))
+  {
+    return 13;
+  }else if (strUID.equalsIgnoreCase(joker))
+  {
+    return 0;
+  }else{
+    return 1; // test用
   }
+  
+
+
 }
 // ---------------------------------------------------------------
 void LEDcontrol(int ID, unsigned long StartTime, unsigned long CurrentTime)
@@ -198,7 +262,7 @@ void LCDcontrol(int ID, unsigned long StartTime, unsigned long CurrentTime)
     // ledPosition =0;
   }
 
-  int action = 2; // 演出を指定
+  int action = ; // 演出を指定
 
   switch (action)
   {
@@ -217,6 +281,17 @@ void LCDcontrol(int ID, unsigned long StartTime, unsigned long CurrentTime)
       previousLCDTime = CurrentTime;
       rotate_display(diff, ID);
     }
+    break;
+      
+  case 3:
+    if ((CurrentTime - previousLCDTime) > 100)
+    { // 100ms間隔で更新
+      float diff = currentMillis - startMillis;
+      previousLCDTime = CurrentTime;
+      MaskReveal_Sphere();
+
+    }
+    break;
   default:
     break;
   }
@@ -274,6 +349,7 @@ void wait_display_setup()
   spriteWord2.setColorDepth(8); // カラーモード設定
   spriteWord3.setColorDepth(8); // カラーモード設定
   spriteWord4.setColorDepth(8); // カラーモード設定
+  spriteMask.setColorDepth(8); // カラーモード設定
 
   spriteImage.createSprite(320, 218);
   spriteBase.createSprite(320, 240);
@@ -281,6 +357,7 @@ void wait_display_setup()
   spriteWord2.createSprite(80, 80);
   spriteWord3.createSprite(80, 80);
   spriteWord4.createSprite(80, 80);
+  spriteMask.createSprite(320, 240);
 
   spriteWord1.setTextSize(6); // 文字サイズ42px
   spriteWord2.setTextSize(6); // 文字サイズ42px
@@ -319,9 +396,26 @@ void rotate_display(float diff, int cardId)
   case 1:
     spriteImage.drawJpgFile(SD, "/trump/card_spade_01.jpg", 0, 0);
     break;
+  case 10:
+    spriteImage.drawJpgFile(SD, "/trump/card_spade_10.jpg", 0, 0);
+    break;
+  case 11:
+    spriteImage.drawJpgFile(SD, "/trump/card_spade_11.jpg", 0, 0);
+    break;
+  case 12:
+    spriteImage.drawJpgFile(SD, "/trump/card_spade_12.jpg", 0, 0);
+    break;
+  case 13:
+    spriteImage.drawJpgFile(SD, "/trump/card_spade_13.jpg", 0, 0);
+    break;
+  case  0:
+    spriteImage.drawJpgFile(SD, "/trump/card_spade_05.jpg", 0, 0);
+    break;
   }
 
   float round_diff = round(diff / 100) * 100; // きっちり5000で回転が終わるように調整
+  // Serial.printf("--------------------------- \n");
+  // Serial.printf("%lf \n", round_diff);
 
   spriteBase.fillScreen(BLACK); // 画面の塗りつぶし
   spriteImage.pushRotateZoom(160, 120, round_diff * 360 / TotalTime, round_diff * 1 / TotalTime, round_diff * 1 / TotalTime);
@@ -363,5 +457,116 @@ boolean shakeReset()
   {
     return false;
   }
+}
+// ---------------------------------------------------------------
+// 効果音のセットアップ
+void sound_effect_setup()
+{
+  M5.Axp.SetSpkEnable(true);
+  InitI2SSpeakerOrMic(MODE_SPK);
+}
+// ---------------------------------------------------------------
+// 効果音コントロール
+void SEcontrol()
+{
+  int rand_int = random(5);
+  size_t bytes_written;
+
+  // rand_int = 0; // test用
+
+  i2s_write(SPEAKER_I2S_NUMBER, wavList[rand_int], wavSize[rand_int], &bytes_written, portMAX_DELAY);
+  i2s_zero_dma_buffer(SPEAKER_I2S_NUMBER);
+}
+// ---------------------------------------------------------------
+void InitI2SSpeakerOrMic(int mode)
+{
+  esp_err_t err = ESP_OK;
+  i2s_driver_uninstall(SPEAKER_I2S_NUMBER);
+  i2s_config_t i2s_config = {
+      .mode = (i2s_mode_t)(I2S_MODE_MASTER),
+      .sample_rate = 16000,
+      .bits_per_sample = I2S_BITS_PER_SAMPLE_16BIT,
+      .channel_format = I2S_CHANNEL_FMT_ALL_RIGHT,
+      .communication_format = I2S_COMM_FORMAT_I2S,
+      .intr_alloc_flags = ESP_INTR_FLAG_LEVEL1,
+      .dma_buf_count = 6,
+      .dma_buf_len = 60,
+      .use_apll = false,
+      .tx_desc_auto_clear = true,
+      .fixed_mclk = 0};
+  if (mode == MODE_MIC)
+  {
+    i2s_config.mode = (i2s_mode_t)(I2S_MODE_MASTER | I2S_MODE_RX | I2S_MODE_PDM);
+  }
+  else
+  {
+    i2s_config.mode = (i2s_mode_t)(I2S_MODE_MASTER | I2S_MODE_TX);
+  }
+  err += i2s_driver_install(SPEAKER_I2S_NUMBER, &i2s_config, 0, NULL);
+  i2s_pin_config_t tx_pin_config = {
+      .bck_io_num = CONFIG_I2S_BCK_PIN,
+      .ws_io_num = CONFIG_I2S_LRCK_PIN,
+      .data_out_num = CONFIG_I2S_DATA_PIN,
+      .data_in_num = CONFIG_I2S_DATA_IN_PIN,
+  };
+  err += i2s_set_pin(SPEAKER_I2S_NUMBER, &tx_pin_config);
+  if (mode != MODE_MIC)
+  {
+    err += i2s_set_clk(SPEAKER_I2S_NUMBER, 16000, I2S_BITS_PER_SAMPLE_16BIT, I2S_CHANNEL_MONO);
+  }
+  i2s_zero_dma_buffer(SPEAKER_I2S_NUMBER);
+}
+// ---------------------------------------------------------------
+void task1(void *pvParameters)
+{
+  bool receivedData;
+  if (xQueueReceive(xQueue1, &receivedData, 0) == pdTRUE)
+  {
+    if (receivedData == 1)
+    {
+      SEcontrol();
+    }
+  }
+
+  task1Handle = NULL;
+  vTaskDelete(NULL);
+
+  // while (1)
+  // {
+  //   SEcontrol();
+  //   // Wait(1ミリ秒以上を推奨)
+  //   delay(1);
+  // }
+}
+// ---------------------------------------------------------------
+void multi_task_setup()
+{
+  xTaskCreateUniversal(
+      task1,        // 作成するタスク関数
+      "SE_task",    // 表示用タスク名
+      8192,         // スタックメモリ量
+      NULL,         // 起動パラメータ
+      0,            // 優先度
+      &task1Handle, // タスクハンドル
+      0             // 実行するコア
+  );
+}
+// ---------------------------------------------------------------
+void MaskReveal_Sphere() {
+  int boxWidth = 30;  // 箱の幅
+  int boxHeight = 30;  // 箱の高さ
+
+  int x = random(360 - boxWidth);
+  int y = random(240 - boxHeight);
+
+  spriteBase.fillScreen(BLACK); // 画面の塗りつぶし
+  //spriteImage.fillCircle(160, 120, 50, RED);
+
+  spriteImage.drawJpgFile(SD, "/trump/card_spade_01.jpg", 0, 0);  // 絵をセット
+  spriteImage.fillCircle(160, 120, 50, RED);                      // 絵の上に円を描画
+  spriteImage.pushRotateZoom(160, 120, 0, 1, 1);                  // 絵をBaseにプッシュ
+
+  //spriteMask.pushSprite(0, 0);
+  spriteBase.pushSprite(0, 0);                                    // Baseを画面にプッシュ
 }
 // ---------------------------------------------------------------
