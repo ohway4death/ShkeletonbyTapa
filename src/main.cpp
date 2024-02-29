@@ -43,6 +43,7 @@ int littleFingerLine[5] = {18, 19, 20};
 bool isCard = false; // カード読み取りフラグ
 int CardID = 0;
 float TotalTime = 4000; // 演出合計時間(ms)
+
 unsigned long startMillis = 0;
 unsigned long currentMillis = 0;
 unsigned long previousLEDTime = 0;
@@ -66,7 +67,6 @@ void rotate_display(float diff, int cardId);
 void MaskReveal_Sphere();
 LGFX_Sprite spriteMask;
 
-
 // 加速度リセット
 float baseAccX, baseAccY, baseAccZ = 0; // 基準加速度格納用
 float accX, accY, accZ;                 // 加速度格納用
@@ -82,6 +82,7 @@ boolean shakeReset();
 const unsigned char *wavList[] = {aura, beamcharge, charge, drumroll, wafu};
 const size_t wavSize[] = {sizeof(aura), sizeof(beamcharge), sizeof(charge), sizeof(drumroll), sizeof(wafu)};
 
+
 // マルチタスク
 TaskHandle_t task1Handle;
 QueueHandle_t xQueue1;
@@ -95,10 +96,12 @@ void LEDcontrol(int B, unsigned long C, unsigned long D);
 void LCDcontrol(int B, unsigned long C, unsigned long D);
 void uid_display_proc();
 void acc_setup();
+
 void sound_effect_setup();
 void SEcontrol();
 void InitI2SSpeakerOrMic(int mode);
 void multi_task_setup();
+
 // ---------------------------------------------------------------
 void setup()
 {
@@ -112,10 +115,12 @@ void setup()
   mfrc522.PCD_Init();
 
   wait_display_setup(); // 待機画面SCANのsetup
+
   acc_setup();          // shake_resetのためのsetup
   sound_effect_setup(); // 効果音のためのsetup
 
   xQueue1 = xQueueCreate(QUEUE1_LENGTH, sizeof(boolean));
+
 }
 
 // ---------------------------------------------------------------
@@ -142,10 +147,11 @@ void loop()
   {
     LEDcontrol(CardID, startMillis, currentMillis);
     LCDcontrol(CardID, startMillis, currentMillis);
-    // SEcontrol();
-    multi_task_setup();
-    Serial.printf("startMillis = %d, currentMillis = %d, diff = %d\n", startMillis, currentMillis, (currentMillis - startMillis));
 
+    multi_task_setup();
+    
+    Serial.printf("startMillis = %d, currentMillis = %d, diff = %d\n", startMillis, currentMillis, (currentMillis - startMillis));
+    
     if ((currentMillis - startMillis) > TotalTime)
     {
       zeroSet();
@@ -182,10 +188,12 @@ int identifyCard()
     }
   }
   String strUID = strBuf[0] + " " + strBuf[1] + " " + strBuf[2] + " " + strBuf[3];
+
   Serial.printf("%s",strUID);
 
   // カードを増やしたい場合はdefine増やしてからここに追加
   // switch文でstringの比較ができない
+  // カードを増やしたい場合はdefine増やしてからここに追加
   if (strUID.equalsIgnoreCase(ace))
   {
     return 1;
@@ -254,7 +262,7 @@ void LCDcontrol(int ID, unsigned long StartTime, unsigned long CurrentTime)
     // ledPosition =0;
   }
 
-  int action = 3; // 演出を指定
+  int action = ; // 演出を指定
 
   switch (action)
   {
@@ -274,12 +282,14 @@ void LCDcontrol(int ID, unsigned long StartTime, unsigned long CurrentTime)
       rotate_display(diff, ID);
     }
     break;
+      
   case 3:
     if ((CurrentTime - previousLCDTime) > 100)
     { // 100ms間隔で更新
       float diff = currentMillis - startMillis;
       previousLCDTime = CurrentTime;
       MaskReveal_Sphere();
+
     }
     break;
   default:
