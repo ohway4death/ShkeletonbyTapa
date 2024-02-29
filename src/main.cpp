@@ -52,20 +52,20 @@ unsigned long previousLCDTime = 0;
 // 待機画面
 static LGFX lcd;                      // LGFXのインスタンスを作成。
 LGFX_Sprite spriteBase(&lcd);         // スプライトを使う場合はLGFX_Spriteのインスタンスを作成。
-LGFX_Sprite spriteImage(&spriteBase); // スプライトを使う場合はLGFX_Spriteのインスタンスを作成。
+LGFX_Sprite spriteSub(&spriteBase); // スプライトを使う場合はLGFX_Spriteのインスタンスを作成。
 LGFX_Sprite spriteWord1(&spriteBase); // スプライトを使う場合はLGFX_Spriteのインスタンスを作成。
 LGFX_Sprite spriteWord2(&spriteBase); // スプライトを使う場合はLGFX_Spriteのインスタンスを作成。
 LGFX_Sprite spriteWord3(&spriteBase); // スプライトを使う場合はLGFX_Spriteのインスタンスを作成。
 LGFX_Sprite spriteWord4(&spriteBase); // スプライトを使う場合はLGFX_Spriteのインスタンスを作成。
 void wait_display_setup();
 void wait_display();
+void reset_display();
 
 // 回転演出
 void rotate_display(float diff, int cardId);
 
 // 穴あき演出
 void MaskReveal_Sphere();
-LGFX_Sprite spriteMask;
 
 // 加速度リセット
 float baseAccX, baseAccY, baseAccZ = 0; // 基準加速度格納用
@@ -140,6 +140,7 @@ void loop()
       isCard = true;
       static bool data = true;
       xQueueSend(xQueue1, &data, 0);
+      reset_display();
       startMillis = currentMillis;
     }
   }
@@ -262,7 +263,7 @@ void LCDcontrol(int ID, unsigned long StartTime, unsigned long CurrentTime)
     // ledPosition =0;
   }
 
-  int action = 2; // 演出を指定
+  int action = 3; // 演出を指定
 
   switch (action)
   {
@@ -290,6 +291,15 @@ void LCDcontrol(int ID, unsigned long StartTime, unsigned long CurrentTime)
       previousLCDTime = CurrentTime;
       MaskReveal_Sphere();
 
+    }
+    break;
+  case 4:
+    if ((CurrentTime - previousLCDTime) > 100)
+    { // 100ms間隔で更新
+      float diff = currentMillis - startMillis;
+      previousLCDTime = CurrentTime;
+      MaskReveal_Rectangle();
+      count = 0;
     }
     break;
   default:
@@ -343,26 +353,24 @@ void uid_display_proc()
 void wait_display_setup()
 {
   lcd.init();                   // LCD初期化
-  spriteImage.setColorDepth(8); // カラーモード設定
+  spriteSub.setColorDepth(8); // カラーモード設定
   spriteBase.setColorDepth(8);  // カラーモード設定
   spriteWord1.setColorDepth(8); // カラーモード設定
   spriteWord2.setColorDepth(8); // カラーモード設定
   spriteWord3.setColorDepth(8); // カラーモード設定
   spriteWord4.setColorDepth(8); // カラーモード設定
-  spriteMask.setColorDepth(8); // カラーモード設定
-
-  spriteImage.createSprite(320, 218);
-  spriteBase.createSprite(320, 240);
-  spriteWord1.createSprite(80, 80);
-  spriteWord2.createSprite(80, 80);
-  spriteWord3.createSprite(80, 80);
-  spriteWord4.createSprite(80, 80);
-  spriteMask.createSprite(320, 240);
 
   spriteWord1.setTextSize(6); // 文字サイズ42px
   spriteWord2.setTextSize(6); // 文字サイズ42px
   spriteWord3.setTextSize(6); // 文字サイズ42px
   spriteWord4.setTextSize(6); // 文字サイズ42px
+
+  spriteSub.createSprite(320, 218);
+  spriteBase.createSprite(320, 240);
+  spriteWord1.createSprite(80, 80);
+  spriteWord2.createSprite(80, 80);
+  spriteWord3.createSprite(80, 80);
+  spriteWord4.createSprite(80, 80);
 
   spriteWord1.setCursor(24, 24);
   spriteWord2.setCursor(24, 24);
@@ -386,6 +394,12 @@ void wait_display()
   spriteBase.pushSprite(&lcd, 0, 0);
 }
 // ---------------------------------------------------------------
+void reset_display(){
+  spriteBase.fillScreen(BLACK);
+  spriteSub.fillScreen(BLACK);
+  spriteBase.pushSprite(&lcd, 0, 0);
+}
+// ---------------------------------------------------------------
 // 回転演出
 int i = 0;
 int mode = 1;
@@ -394,31 +408,32 @@ void rotate_display(float diff, int cardId)
   switch (cardId)
   {
   case 1:
-    spriteImage.drawJpgFile(SD, "/trump/card_spade_01.jpg", 0, 0);
+    spriteSub.drawJpgFile(SD, "/trump/card_spade_01.jpg", 0, 0);
     break;
   case 10:
-    spriteImage.drawJpgFile(SD, "/trump/card_spade_10.jpg", 0, 0);
+    spriteSub.drawJpgFile(SD, "/trump/card_spade_10.jpg", 0, 0);
     break;
   case 11:
-    spriteImage.drawJpgFile(SD, "/trump/card_spade_11.jpg", 0, 0);
+    spriteSub.drawJpgFile(SD, "/trump/card_spade_11.jpg", 0, 0);
     break;
   case 12:
-    spriteImage.drawJpgFile(SD, "/trump/card_spade_12.jpg", 0, 0);
+    spriteSub.drawJpgFile(SD, "/trump/card_spade_12.jpg", 0, 0);
     break;
   case 13:
-    spriteImage.drawJpgFile(SD, "/trump/card_spade_13.jpg", 0, 0);
+    spriteSub.drawJpgFile(SD, "/trump/card_spade_13.jpg", 0, 0);
     break;
   case  0:
-    spriteImage.drawJpgFile(SD, "/trump/card_spade_05.jpg", 0, 0);
+    spriteSub.drawJpgFile(SD, "/trump/card_spade_05.jpg", 0, 0);
     break;
   }
 
-  float round_diff = round(diff / 100) * 100; // きっちり5000で回転が終わるように調整
+  float round_diff = round(diff / 100.0) * 100; // きっちり5000で回転が終わるように調整
   // Serial.printf("--------------------------- \n");
-  // Serial.printf("%lf \n", round_diff);
+  Serial.printf("%lf \n", round(diff / 100.0));
 
-  spriteBase.fillScreen(BLACK); // 画面の塗りつぶし
-  spriteImage.pushRotateZoom(160, 120, round_diff * 360 / TotalTime, round_diff * 1 / TotalTime, round_diff * 1 / TotalTime);
+  spriteBase.fillScreen(BLACK); //画面の塗りつぶし
+  spriteSub.pushRotateZoom(160, 120, round_diff * 360 / TotalTime, round_diff * 1 / TotalTime, round_diff * 1 / TotalTime);
+  //spriteBase.pushRotateZoom(160, 120, round_diff * 360 / TotalTime, round_diff * 1 / TotalTime, round_diff * 1 / TotalTime);
   spriteBase.pushSprite(0, 0);
 }
 // ---------------------------------------------------------------
@@ -560,13 +575,35 @@ void MaskReveal_Sphere() {
   int y = random(240 - boxHeight);
 
   spriteBase.fillScreen(BLACK); // 画面の塗りつぶし
-  //spriteImage.fillCircle(160, 120, 50, RED);
+  //spriteSub.fillScreen(BLACK);  // 画面の塗りつぶし
 
-  spriteImage.drawJpgFile(SD, "/trump/card_spade_01.jpg", 0, 0);  // 絵をセット
-  spriteImage.fillCircle(160, 120, 50, RED);                      // 絵の上に円を描画
-  spriteImage.pushRotateZoom(160, 120, 0, 1, 1);                  // 絵をBaseにプッシュ
+  spriteBase.drawJpgFile(SD, "/trump/card_spade_01.jpg", 0, 11);  // 絵をセット
+  spriteSub.fillCircle(x, y, 50, RED);                        // 円を作成
 
-  //spriteMask.pushSprite(0, 0);
+  spriteSub.pushSprite(0, 11, RED);                                // REDを透明色にしてSubをBaseにプッシュ。カードの一部だけが見えるはず。
   spriteBase.pushSprite(0, 0);                                    // Baseを画面にプッシュ
 }
 // ---------------------------------------------------------------
+// 四角形が左上から右下に流れていく　横320縦218＝69760　40回で全オープン　69760/40=1744
+int count;
+void MaskReveal_Rectangle() {
+  
+  int boxWidth  = 44;  // 箱の幅
+  int boxHeight = 40;  // 箱の高さ
+  
+  int x = count * 44 % 8
+  int y = count * 40
+
+  spriteBase.fillScreen(BLACK); // 画面の塗りつぶし
+  //spriteSub.fillScreen(BLACK);  // 画面の塗りつぶし
+
+  spriteBase.drawJpgFile(SD, "/trump/card_spade_01.jpg", 0, 11);  // 絵をセット
+  spriteSub.fillRect(x,y,boxWidth,boxHeight,RED);                        // 円を作成
+
+  spriteSub.pushSprite(0, 11, RED);                                // REDを透明色にしてSubをBaseにプッシュ。カードの一部だけが見えるはず。
+  spriteBase.pushSprite(0, 0);                                    // Baseを画面にプッシュ
+
+  count++;
+}
+// ---------------------------------------------------------------
+
