@@ -262,7 +262,7 @@ void LCDcontrol(int ID, unsigned long StartTime, unsigned long CurrentTime)
     // ledPosition =0;
   }
 
-  int action = ; // 演出を指定
+  int action = 2; // 演出を指定
 
   switch (action)
   {
@@ -524,7 +524,7 @@ void task1(void *pvParameters)
   {
     if (receivedData == 1)
     {
-      SEcontrol();
+      //SEcontrol();
     }
   }
 
