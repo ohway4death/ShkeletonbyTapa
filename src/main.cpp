@@ -66,17 +66,20 @@ void wait_display_setup();
 void wait_display();
 void reset_display();
 
+// トランプ画像のパスを返す。
+String trump_set(int cardID);
+
 // 回転演出
 void rotate_display(float diff, int cardId);
 
 // 穴あき演出
-void MaskReveal_Sphere();
+void MaskReveal_Sphere(int cardId);
 int getRandomValue(int min, int max);
 std::vector<int> myList;
 void MaskReveal_Sphere_setup();
 
 // カーテン的な
-void MaskReveal_Rectangle();
+void MaskReveal_Rectangle(int cardId);
 int count;
 
 // 加速度リセット
@@ -162,8 +165,6 @@ void loop()
     LCDcontrol(CardID, startMillis, currentMillis);
 
     multi_task_setup();
-
-    Serial.printf("startMillis = %d, currentMillis = %d, diff = %d\n", startMillis, currentMillis, (currentMillis - startMillis));
 
     if ((currentMillis - startMillis) > TotalTime)
     {
@@ -279,7 +280,7 @@ void LCDcontrol(int ID, unsigned long StartTime, unsigned long CurrentTime)
     // ledPosition =0;
   }
 
-  int action = 3; // 演出を指定
+  int action = 2; // 演出を指定
 
   switch (action)
   {
@@ -294,9 +295,11 @@ void LCDcontrol(int ID, unsigned long StartTime, unsigned long CurrentTime)
   case 2:
     if ((CurrentTime - previousLCDTime) > 100)
     { // 100ms間隔で更新
+      // Serial.printf("--------------------------- %d \n", count);
       float diff = currentMillis - startMillis;
       previousLCDTime = CurrentTime;
       rotate_display(diff, ID);
+      count++;
     }
     break;
 
@@ -305,7 +308,7 @@ void LCDcontrol(int ID, unsigned long StartTime, unsigned long CurrentTime)
     { // 100ms間隔で更新
       float diff = currentMillis - startMillis;
       previousLCDTime = CurrentTime;
-      MaskReveal_Sphere();
+      MaskReveal_Sphere(ID);
     }
     break;
   case 4:
@@ -313,7 +316,7 @@ void LCDcontrol(int ID, unsigned long StartTime, unsigned long CurrentTime)
     { // 100ms間隔で更新
       float diff = currentMillis - startMillis;
       previousLCDTime = CurrentTime;
-      MaskReveal_Rectangle();
+      MaskReveal_Rectangle(ID);
     }
     break;
   default:
@@ -420,35 +423,15 @@ int i = 0;
 int mode = 1;
 void rotate_display(float diff, int cardId)
 {
-  switch (cardId)
-  {
-  case 1:
-    spriteSub.drawJpgFile(SD, "/real_trump/card_heart_01.jpg", 0, 0);
-    break;
-  case 10:
-    spriteSub.drawJpgFile(SD, "/real_trump/card_heart_10.jpg", 0, 0);
-    break;
-  case 11:
-    spriteSub.drawJpgFile(SD, "/real_trump/card_heart_11.jpg", 0, 0);
-    break;
-  case 12:
-    spriteSub.drawJpgFile(SD, "/real_trump/card_heart_12.jpg", 0, 0);
-    break;
-  case 13:
-    spriteSub.drawJpgFile(SD, "/real_trump/card_heart_13.jpg", 0, 0);
-    break;
-  case 0:
-    spriteSub.drawJpgFile(SD, "/real_trump/card_heart_joker.jpg", 0, 0);
-    break;
-  }
+  spriteSub.drawJpgFile(SD, trump_set(cardId), 0, 0);
+  int round_diff = int(diff) / 100 * 100;
 
-  float round_diff = round(diff / 100.0) * 100; // きっちり5000で回転が終わるように調整
-  // Serial.printf("--------------------------- \n");
-  Serial.printf("%lf \n", round(diff / 100.0));
+  Serial.printf("--------------------------- \n");
+  Serial.printf("startMillis = %d, currentMillis = %d, diff = %d\n", startMillis, currentMillis, (currentMillis - startMillis));
+  Serial.printf("%d \n", int(diff) / 100 * 100);
 
   spriteBase.fillScreen(BLACK); // 画面の塗りつぶし
-  spriteSub.pushRotateZoom(160, 120, round_diff * 360 / TotalTime, round_diff * 1 / TotalTime, round_diff * 1 / TotalTime);
-  // spriteBase.pushRotateZoom(160, 120, round_diff * 360 / TotalTime, round_diff * 1 / TotalTime, round_diff * 1 / TotalTime);
+  spriteSub.pushRotateZoom(160, 120, round_diff * 360 / (TotalTime - 100), round_diff * 1 / (TotalTime - 100), round_diff * 1 / (TotalTime - 100));
   spriteBase.pushSprite(0, 0);
 }
 // ---------------------------------------------------------------
@@ -560,13 +543,6 @@ void task1(void *pvParameters)
 
   task1Handle = NULL;
   vTaskDelete(NULL);
-
-  // while (1)
-  // {
-  //   SEcontrol();
-  //   // Wait(1ミリ秒以上を推奨)
-  //   delay(1);
-  // }
 }
 // ---------------------------------------------------------------
 void multi_task_setup()
@@ -582,17 +558,20 @@ void multi_task_setup()
   );
 }
 // ---------------------------------------------------------------
-void MaskReveal_Sphere_setup(){
-  for (int i = 0; i <= 39; ++i) {
+void MaskReveal_Sphere_setup()
+{
+  for (int i = 0; i <= 39; ++i)
+  {
     myList.push_back(i);
   }
 }
-int getRandomValue(int min, int max) {
-    return min + rand() % (max - min + 1);
+int getRandomValue(int min, int max)
+{
+  return min + rand() % (max - min + 1);
 }
 
 // ---------------------------------------------------------------
-void MaskReveal_Sphere()
+void MaskReveal_Sphere(int cardId)
 {
 
   int randomIndex = getRandomValue(0, myList.size() - 1);
@@ -607,7 +586,7 @@ void MaskReveal_Sphere()
   spriteBase.fillScreen(BLACK); // 画面の塗りつぶし
   // spriteSub.fillScreen(BLACK);  // 画面の塗りつぶし
 
-  spriteBase.drawJpgFile(SD, "/real_trump/card_heart_01.jpg", 0, 17); // 絵をセット
+  spriteBase.drawJpgFile(SD, trump_set(cardId), 0, 17); // 絵をセット
   spriteSub.fillCircle(x, y, 60, RED);                                // 円を作成
 
   spriteSub.pushSprite(0, 17, RED); // REDを透明色にしてSubをBaseにプッシュ。カードの一部だけが見えるはず。
@@ -617,17 +596,16 @@ void MaskReveal_Sphere()
 }
 // ---------------------------------------------------------------
 // カーテン的な感じにする
-void MaskReveal_Rectangle()
+void MaskReveal_Rectangle(int cardId)
 {
 
   int boxWidth = 3;    // 箱の幅
   int boxHeight = 320; // 箱の高さ
 
-  int left_y =  100 - count * 3;
+  int left_y = 100 - count * 3;
   int right_y = 103 + count * 3;
 
   spriteBase.fillScreen(BLACK); // 画面の塗りつぶし
-  //spriteSub.fillScreen(BLACK);  // 画面の塗りつぶし
 
   // if (count > 4)
   // {
@@ -637,13 +615,38 @@ void MaskReveal_Rectangle()
   //   spriteSub.pushSprite(0, 17, RED);                               // REDを透明色にしてSubをBaseにプッシュ。カードの一部だけが見えるはず。
   // }
 
-  spriteBase.drawJpgFile(SD, "/real_trump/card_heart_01.jpg", 0, 17); // 絵をセット
-  spriteSub.fillRect(0, left_y,  boxHeight, boxWidth, RED);       // 長方形
-  spriteSub.fillRect(0, right_y, boxHeight, boxWidth, RED);       // 長方形
-  spriteSub.pushSprite(0, 17, RED);                               // REDを透明色にしてSubをBaseにプッシュ。カードの一部だけが見えるはず。
+  spriteBase.drawJpgFile(SD, trump_set(cardId), 0, 17); // 絵をセット
+  spriteSub.fillRect(0, left_y, boxHeight, boxWidth, RED);            // 長方形
+  spriteSub.fillRect(0, right_y, boxHeight, boxWidth, RED);           // 長方形
+  spriteSub.pushSprite(0, 17, RED);                                   // REDを透明色にしてSubをBaseにプッシュ。カードの一部だけが見えるはず。
 
   spriteBase.pushSprite(0, 0); // Baseを画面にプッシュ
 
   count++;
+}
+// ---------------------------------------------------------------
+String trump_set(int cardID)
+{
+  switch (cardID)
+  {
+  case 1:
+    return "/real_trump/card_heart_01.jpg";
+    break;
+  case 10:
+    return "/real_trump/card_heart_10.jpg";
+    break;
+  case 11:
+    return "/real_trump/card_heart_11.jpg";
+    break;
+  case 12:
+    return "/real_trump/card_heart_12.jpg";
+    break;
+  case 13:
+    return "/real_trump/card_heart_13.jpg";
+    break;
+  case 0:
+    return "/real_trump/card_heart_joker.jpg";
+    break;
+  }
 }
 // ---------------------------------------------------------------
